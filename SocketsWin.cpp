@@ -16,7 +16,9 @@
 // into any of my code.  But if you need to
 // include the Windows.h file then
 // you have to define
-//     #define WIN32_LEAN_AND_MEAN
+
+// #define WIN32_LEAN_AND_MEAN
+
 // So that it doesn't include winsock.h.
 // And of course this would only be done in
 // a .cpp file and not a header file
@@ -224,7 +226,7 @@ freeaddrinfo( result );
 
 // Make it non blocking.  0 is blocking.
 // Non zero is non blocking.
-// Uint32L iMode = 1;
+Uint32L iMode = 1;
 
 // setsockopt()
 
@@ -234,19 +236,23 @@ freeaddrinfo( result );
 // sockfd = socket(PF_INET, SOCK_STREAM, 0);
 // fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
-// Windows doesn't support this.
-// Because it's always non blocking?
-// Int32 ioResult = ioctlsocket( clientSocket,
-//                    Casting::u32ToI32( FIONBIO ),
-//                    &iMode );
-
-//  Int32 error = WSAGetLastError();
-// errorBuf.appendChars(
-//               "socket ioctl failed.\n" );
-//   errorBuf.appendChars( "Error is: " );
-//  Str errorS( error );
-//  errorBuf.appendStr( errorS );
-//  errorBuf.appendChars( "\n" );
+// #define FIONBIO     _IOW('f', 126, u_long)
+status = ioctlsocket( clientSocket,
+                    Casting::u32ToI32ForMacro(
+                    FIONBIO ),
+                    // FIONBIO,
+                    &iMode );
+if( status != 0 )
+  {
+  Int32 error = WSAGetLastError();
+  errorBuf.appendChars(
+                 "socket ioctl failed.\n" );
+  errorBuf.appendChars( "Error is: " );
+  Str errorS( error );
+  errorBuf.appendStr( errorS );
+  errorBuf.appendChars( "\n" );
+  return 0;
+  }
 
 return clientSocket;
 }
@@ -355,7 +361,7 @@ freeaddrinfo( result );
 
 // Make it non blocking.  0 is blocking.
 // Non zero is non blocking.
-// Uint32L iMode = 1;
+Uint32L iMode = 1;
 
 // setsockopt()
 
@@ -365,11 +371,27 @@ freeaddrinfo( result );
 // sockfd = socket(PF_INET, SOCK_STREAM, 0);
 // fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
-// Windows doesn't support this.
-// Because it's always non blocking?
-// Int32 ioResult = ioctlsocket( clientSocket,
-//                    Casting::u32ToI32( FIONBIO ),
-//                    &iMode );
+// C:\Program Files (x86)\Windows Kits\
+//         10\include\10.0.19041.0\um\winsock2.h
+
+// #define FIONBIO     _IOW('f', 126, u_long)
+status = ioctlsocket( serverSocket,
+                    Casting::u32ToI32ForMacro(
+                    FIONBIO ),
+                    // FIONBIO,
+                    &iMode );
+if( status != 0 )
+  {
+  Int32 error = WSAGetLastError();
+  errorBuf.appendChars(
+                 "socket ioctl failed.\n" );
+  errorBuf.appendChars( "Error is: " );
+  Str errorS( error );
+  errorBuf.appendStr( errorS );
+  errorBuf.appendChars( "\n" );
+  return 0;
+  }
+
 
 //  Int32 error = WSAGetLastError();
 // errorBuf.appendChars(
@@ -384,6 +406,7 @@ return serverSocket;
 
 
 
+/*
 bool SocketsWin::checkSelect(
                          SocketCpp servSock,
                          CharBuf& errorBuf )
@@ -412,20 +435,20 @@ errorBuf.appendChars(
                 "Select not ready.\n" );
 return false;
 }
-
+*/
 
 
 SocketCpp SocketsWin::acceptConnect(
                          SocketCpp servSock,
                          CharBuf& errorBuf )
 {
-==== Check that local loopback is 127.0.0.1
+//  127.0.0.1
 
 struct sockaddr_storage remoteAddr;
 Int32 addrSize = sizeof( remoteAddr );
 
-if( !checkSelect( servSock, errorBuf ))
-  return 0;
+// if( !checkSelect( servSock, errorBuf ))
+  // return 0;
 
 // I hate to have to do stuff like this:
 // The new style static_cast won't work here
@@ -448,8 +471,9 @@ SocketCpp acceptSock = accept( servSock,
 
 if( acceptSock == INVALID_SOCKET )
   {
-  errorBuf.appendChars(
-              "Accepted socket is invalid.\n" );
+  // It's non-blocking and there is nothing there.
+  // errorBuf.appendChars(
+  //            "Accepted socket is invalid.\n" );
   return 0;
   }
 

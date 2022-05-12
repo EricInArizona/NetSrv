@@ -44,8 +44,8 @@ class SocketsWin
   static SocketCpp openServer( const char* port,
                                CharBuf& errorBuf );
 
-  static bool checkSelect( SocketCpp servSock,
-                           CharBuf& errorBuf );
+  // static bool checkSelect( SocketCpp servSock,
+  //                         CharBuf& errorBuf );
 
   static SocketCpp acceptConnect(
                          SocketCpp servSock,
