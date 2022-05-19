@@ -91,12 +91,16 @@ WSACleanup();
 }
 
 
-
+/*
 SocketCpp SocketsApi::getInvalidSocket( void )
 {
+if( InvalidSocket == INVALID_SOCKET )
+  return 0;
+
+// This is unreachable code because it is zero.
 return INVALID_SOCKET;
 }
-
+*/
 
 
 

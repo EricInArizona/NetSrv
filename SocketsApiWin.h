@@ -36,10 +36,10 @@ class SocketsApi
   Int32 testForCopy = 123;
 
   public:
+  static const SocketCpp InvalidSocket = 0;
   SocketsApi( void );
   SocketsApi( const SocketsApi &in );
   ~SocketsApi( void );
-  static SocketCpp getInvalidSocket( void );
 
   static void closeSocket( SocketCpp toClose );
 

@@ -17,6 +17,7 @@
 
 
 
+// template<class T>
 class Server
   {
   private:
@@ -31,5 +32,6 @@ class Server
   ~Server( void );
   bool startServer( const char* port );
   void mainLoop( void );
+  void addNewConnections( void );
 
   };

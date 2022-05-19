@@ -20,14 +20,14 @@
 
 Server::Server( void )
 {
-mainSocket = SocketsApi::getInvalidSocket();
+mainSocket = SocketsApi::InvalidSocket;
 }
 
 
 
 Server::Server( const Server& in )
 {
-mainSocket = SocketsApi::getInvalidSocket();
+mainSocket = SocketsApi::InvalidSocket;
 
 // Make the compiler think the in value is
 // being used.
@@ -55,7 +55,7 @@ StIO::putS( "Starting server." );
 mainSocket = SocketsApi::openServer(
                             port, showBuf );
 
-if( mainSocket == SocketsApi::getInvalidSocket() )
+if( mainSocket == SocketsApi::InvalidSocket )
   {
   StIO::putCharBuf( showBuf );
   showBuf.clear();
@@ -75,8 +75,7 @@ return true;
 
 void Server::mainLoop( void )
 {
-// while( true )
-for( Int32 count = 0; count < 3; count++ )
+while( true )
   {
   if( Signals::getControlCSignal())
     {
@@ -85,23 +84,43 @@ for( Int32 count = 0; count < 3; count++ )
     break;
     }
 
-  // SocketCpp acceptedSock =
-   //          SocketsApi::acceptConnect(
-     //                    mainSocket,
-     //                    showBuf );
+  SocketCpp acceptedSock =
+                 SocketsApi::acceptConnect(
+                                  mainSocket,
+                                  showBuf );
 
-  // if( acceptedSock == SocketsApi::getInvalidSocket())
-  // {
-  // mainIO.appendChars(
-               // "Did not accept a socket.\n" );
+  if( acceptedSock == SocketsApi::InvalidSocket )
+    {
+    // There is nothing new trying to connect now.
+    // Do this dynamically and adjust it to sleep
+    // more or less or none if it's busy.
+    Int32 milliSec = 1000;
+    Threads::sleep( milliSec );
+    continue;
+    }
 
-  // Do this dynamically and adjust it to sleep
-  // more or less or none if it's busy.
-  Int32 milliSec = 100;
-  Threads::sleep( milliSec );
   }
 
 // Close the server.
 SocketsApi::closeSocket( mainSocket );
 StIO::putS( "Closed server." );
+}
+
+
+
+void Server::addNewConnections( void )
+{
+// Add up to max new clients in one loop.
+const Int32 max = 20;
+for( Int32 count = 0; count < max; count++ )
+  {
+  SocketCpp acceptedSock =
+                 SocketsApi::acceptConnect(
+                                  mainSocket,
+                                  showBuf );
+
+  if( acceptedSock == SocketsApi::InvalidSocket )
+    return;
+
+  }
 }
