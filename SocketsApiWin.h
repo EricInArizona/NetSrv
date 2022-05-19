@@ -34,9 +34,9 @@ class SocketsApi
   {
   private:
   Int32 testForCopy = 123;
+  static const SocketCpp InvalidSocket = 0;
 
   public:
-  static const SocketCpp InvalidSocket = 0;
   SocketsApi( void );
   SocketsApi( const SocketsApi &in );
   ~SocketsApi( void );
@@ -55,6 +55,7 @@ class SocketsApi
 
   static SocketCpp acceptConnect(
                          SocketCpp servSock,
+                         CharBuf& fromCBuf,
                          CharBuf& errorBuf );
 
   static Int32 sendBuf( const SocketCpp sendToSock,

@@ -456,6 +456,7 @@ return false;
 
 SocketCpp SocketsApi::acceptConnect(
                          SocketCpp servSock,
+                         CharBuf& fromCBuf,
                          CharBuf& errorBuf )
 {
 //  127.0.0.1
@@ -493,12 +494,77 @@ if( acceptSock == INVALID_SOCKET )
   return INVALID_SOCKET;
   }
 
+
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wold-style-cast"
+
+// IPv4 or IPv6:
+struct sockaddr* sa = 
+                (struct sockaddr *)&remoteAddr;
+
+void* sinAddress = nullptr;
+
+if( sa->sa_family != AF_INET )
+  {
+  sinAddress = 
+          &(((struct sockaddr_in*)sa)->sin_addr);
+  }
+else
+  {
+  // AF_INET6
+  sinAddress = 
+      &(((struct sockaddr_in6*)sa)->sin6_addr );
+  }
+
+const Int32 bufLast = 1024; 
+char returnS[bufLast];
+
+// Read this and change it to the right struct.
+// Not the struct pointer.
+
+// https://docs.microsoft.com/en-us/windows/win32/api/ws2tcpip/nf-ws2tcpip-inet_ntop
+
+// In WS2tcpip.h
+inet_ntop( sa->sa_family,
+            &sa,
+            returnS, sizeof( returnS ) );
+
+#pragma clang diagnostic pop
+
+for( Int32 count = 0; count < bufLast; count++ )
+  {
+  if( returnS[count] == 0 )
+    break;
+
+  fromCBuf.appendChar( returnS[count] );
+  }
+
+
+//   printf("server: got connection from %s\n", s);
+
 errorBuf.appendChars(
                 "Accepted a socket.\n" );
 
 return acceptSock;
 }
 
+
+
+/*
+====
+// IPv4 or IPv6:
+void* SocketsApi::getInAddress(
+                           struct sockaddr *sa )
+{
+if( sa->sa_family == AF_INET )
+  {
+  return &(((struct sockaddr_in*)sa)->sin_addr);
+  }
+
+return &(((struct sockaddr_in6*)sa)->sin6_addr);
+}
+*/
 
 
 
