@@ -11,6 +11,7 @@
 #include "SocketsApiWin.h"
 // #include "SocketsApiLinux.h"
 #include "../CppBase/Casting.h"
+#include "../CppBase/StIO.h"
 
 
 // I hate to have to put a #define statement
@@ -18,14 +19,15 @@
 // include the Windows.h file then
 // you have to define
 
-// #define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 
 // So that it doesn't include winsock.h.
 // And of course this would only be done in
-// a .cpp file and not a header file
-// #include <windows.h>
+// a .cpp file and never in a header file
 
-// #include <stdio.h>
+// This might or might not be included with
+// Winsock2.h already.
+// #include <windows.h>
 
 
 // For Windows.
@@ -107,12 +109,12 @@ return INVALID_SOCKET;
 void SocketsApi::closeSocket( SocketCpp toClose )
 {
 if( toClose == 0 )
+  {
+  StIO::putS( "Closing a socket that is zero." );
   return;
-
+  }
 // For Windows.
 // returns zero on no error.
-
-//    iResult = shutdown(ConnectSocket, SD_SEND);
 
 closesocket( toClose );
 // Linux uses close();
@@ -120,10 +122,21 @@ closesocket( toClose );
 
 
 
-SocketCpp SocketsApi::openClient(
+void SocketsApi::shutdownRead( SocketCpp toClose )
+{
+if( toClose == 0 )
+  return;
+
+// What is the receive symbol?
+shutdown( toClose, SD_RECEIVE );
+// SD_SEND   SD_BOTH
+}
+
+
+
+SocketCpp SocketsApi::connectClient(
                         const char* domain,
-                        const char* port,
-                        CharBuf& errorBuf )
+                        const char* port )
 {
 // result is a linked list.
 // In Linux is it a pointer to a pointer?
@@ -158,21 +171,13 @@ Int32 status = getaddrinfo(
 
 if( status != 0 )
   {
-  errorBuf.appendChars(
-               "SocketsApi getaddrinfo error.\n" );
+  StIO::putS( "SocketsApi getaddrinfo error." );
 
   // 11001 is host not found.
   Int32 error = WSAGetLastError();
-  errorBuf.appendChars(
-               "clientConnect() error.\n" );
 
   if( error == WSAHOST_NOT_FOUND )
-    errorBuf.appendChars( "Host not found.\n" );
-
-  errorBuf.appendChars( "Error is: " );
-  Str errorS( error );
-  errorBuf.appendStr( errorS );
-  errorBuf.appendChars( "\n" );
+    StIO::putS( "Host not found." );
 
   return 0;
   }
@@ -189,8 +194,7 @@ for( ptr = result; ptr != nullptr;
   count++;
   if( count > 5 )
     {
-    errorBuf.appendChars(
-     "SocketWin too many sockets for connect.\n" );
+    StIO::putS( "SocketWin too many sockets." );
 
     freeaddrinfo( result );
     return 0;
@@ -202,12 +206,19 @@ for( ptr = result; ptr != nullptr;
 
   if( clientSocket == INVALID_SOCKET )
     {
-    errorBuf.appendChars(
-      "SocketWin no sockets left for connect.\n" );
+    StIO::putS( "No sockets left for connect." );
 
     // WSAGetLastError());
     freeaddrinfo( result );
     return 0;
+    }
+
+  // You have to do this before you connect().
+  if( !setNonBlocking( clientSocket ))
+    {
+    StIO::putS( "Client connect setNonBlock false." );
+    continue;
+    // return 0;
     }
 
   Int32 connectResult = connect( clientSocket,
@@ -217,27 +228,33 @@ for( ptr = result; ptr != nullptr;
 
   if( connectResult == SOCKET_ERROR )
     {
-    errorBuf.appendChars(
-      "SocketWin trying the next socket.\n" );
-
+    StIO::putS( "Trying the next socket." );
     closesocket( clientSocket );
     clientSocket = INVALID_SOCKET;
     continue; // Try to connect to the next
               // valid socket.
     }
 
-  // It should have a good connected socket.
-  break;
+  if( clientSocket != INVALID_SOCKET )
+    break;
+
   }
 
-errorBuf.appendChars(
-        "SocketsApi connected to " );
-errorBuf.appendChars( domain );
-errorBuf.appendChars( "\n" );
+StIO::putS( "Connected to " );
+StIO::putS( domain );
 
 freeaddrinfo( result );
 
-// Make it non blocking.  0 is blocking.
+return clientSocket;
+}
+
+
+
+
+bool SocketsApi::setNonBlocking(
+                            const SocketCpp toSet )
+{
+// 0 is blocking.
 // Non zero is non blocking.
 Uint32L iMode = 1;
 
@@ -249,8 +266,18 @@ Uint32L iMode = 1;
 // sockfd = socket(PF_INET, SOCK_STREAM, 0);
 // fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
+// C:\Program Files (x86)\Windows Kits\
+//         10\include\10.0.19041.0\um\winsock2.h
+
+// Here's part of the macros it uses.
+// #define IOCPARM_MASK    0x7f
+// #define _IOW(x,y,t)
+//   (IOC_IN|(((long)sizeof(t)&IOCPARM_MASK)
+//                 <<16)|((x)<<8)|(y))
 // #define FIONBIO     _IOW('f', 126, u_long)
-status = ioctlsocket( clientSocket,
+
+
+Int32 status = ioctlsocket( toSet,
                     Casting::u32ToI32ForMacro(
                     FIONBIO ),
                     // FIONBIO,
@@ -258,23 +285,19 @@ status = ioctlsocket( clientSocket,
 if( status != 0 )
   {
   Int32 error = WSAGetLastError();
-  errorBuf.appendChars(
-                 "socket ioctl failed.\n" );
-  errorBuf.appendChars( "Error is: " );
-  Str errorS( error );
-  errorBuf.appendStr( errorS );
-  errorBuf.appendChars( "\n" );
-  return 0;
+  StIO::putS( "socket ioctl failed." );
+  StIO::printF( "Error is: " );
+  StIO::printFD( error );
+  StIO::printF( "\n" );
+  return false;
   }
 
-return clientSocket;
+return true;
 }
 
 
 
-
-SocketCpp SocketsApi::openServer( const char* port,
-                               CharBuf& errorBuf )
+SocketCpp SocketsApi::openServer( const char* port )
 {
 // For the server class...
 // Check the stats and hacking info for disallowed
@@ -320,13 +343,9 @@ Int32 status = getaddrinfo(
 
 if( status != 0 )
   {
-  errorBuf.appendChars(
-         "SocketWin server getaddrinfo error.\n" );
+  StIO::putS( "Server getaddrinfo error." );
   return 0;
   }
-
-errorBuf.appendChars(
-         "Before opening socket.\n" );
 
 // SOCKET serverSocket = INVALID_SOCKET;
 SocketCpp serverSocket = socket(
@@ -336,9 +355,7 @@ SocketCpp serverSocket = socket(
 
 if( serverSocket == INVALID_SOCKET )
   {
-  errorBuf.appendChars(
-    "SocketWin  server no sockets.\n" );
-
+  StIO::putS( "Server no sockets." );
   // WSAGetLastError());
   freeaddrinfo( result );
   return 0;
@@ -349,9 +366,7 @@ if( 0 != bind( serverSocket, result->ai_addr,
                result->ai_addrlen )))
   {
   closeSocket( serverSocket );
-  errorBuf.appendChars(
-    "SocketWin  server bind error.\n" );
-
+  StIO::putS( "Server bind error." );
   freeaddrinfo( result );
   return 0;
   }
@@ -361,59 +376,18 @@ if( 0 != bind( serverSocket, result->ai_addr,
 if( 0 != listen( serverSocket, 20 ))
   {
   closeSocket( serverSocket );
-  errorBuf.appendChars(
-    "SocketApi  server listen error.\n" );
-
+  StIO::putS( "Server listen error." );
   freeaddrinfo( result );
   return 0;
   }
 
-errorBuf.appendChars(
-        "SocketsApi server got socket.\n" );
-
 freeaddrinfo( result );
 
-// Make it non blocking.  0 is blocking.
-// Non zero is non blocking.
-Uint32L iMode = 1;
-
-// setsockopt()
-
-// for Linux:
-// #include <unistd.h>
-// #include <fcntl.h>
-// sockfd = socket(PF_INET, SOCK_STREAM, 0);
-// fcntl(sockfd, F_SETFL, O_NONBLOCK);
-
-// C:\Program Files (x86)\Windows Kits\
-//         10\include\10.0.19041.0\um\winsock2.h
-
-// #define FIONBIO     _IOW('f', 126, u_long)
-status = ioctlsocket( serverSocket,
-                    Casting::u32ToI32ForMacro(
-                    FIONBIO ),
-                    // FIONBIO,
-                    &iMode );
-if( status != 0 )
+if( !setNonBlocking( serverSocket ))
   {
-  Int32 error = WSAGetLastError();
-  errorBuf.appendChars(
-                 "socket ioctl failed.\n" );
-  errorBuf.appendChars( "Error is: " );
-  Str errorS( error );
-  errorBuf.appendStr( errorS );
-  errorBuf.appendChars( "\n" );
+  StIO::putS( "setNonBlocking returned false." );
   return 0;
   }
-
-
-//  Int32 error = WSAGetLastError();
-// errorBuf.appendChars(
-//               "socket ioctl failed.\n" );
-//   errorBuf.appendChars( "Error is: " );
-//  Str errorS( error );
-//  errorBuf.appendStr( errorS );
-//  errorBuf.appendChars( "\n" );
 
 return serverSocket;
 }
@@ -423,8 +397,7 @@ return serverSocket;
 /*
 // Also see poll().
 bool SocketsWin::checkSelect(
-                         SocketCpp servSock,
-                         CharBuf& errorBuf )
+                         SocketCpp servSock )
 {
 struct timeval tv;
 fd_set readfds;
@@ -441,6 +414,7 @@ select( Casting::U64ToI32( servSock + 1 ),
 
 if( FD_ISSET( servSock, &readfds ))
   {
+StIO::putS(
   errorBuf.appendChars(
                 "Select says ready to read.\n" );
   return true;
@@ -456,15 +430,14 @@ return false;
 
 SocketCpp SocketsApi::acceptConnect(
                          SocketCpp servSock,
-                         CharBuf& fromCBuf,
-                         CharBuf& errorBuf )
+                         CharBuf& fromCBuf )
 {
-//  127.0.0.1
+//  Local loopback: 127.0.0.1
 
 struct sockaddr_storage remoteAddr;
 Int32 addrSize = sizeof( remoteAddr );
 
-// if( !checkSelect( servSock, errorBuf ))
+// if( !checkSelect( servSock ))
   // return 0;
 
 // I hate to have to do stuff like this:
@@ -472,52 +445,72 @@ Int32 addrSize = sizeof( remoteAddr );
 // either.
 // static_cast<>()
 
+// Some ugly stuff here.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wcast-align"
 
 SocketCpp acceptSock = accept( servSock,
               (struct sockaddr *)&remoteAddr,
               &addrSize );
 
-#pragma clang diagnostic pop
-
-// This causes the warning after the pop.
-// accept( servSock,
-//              (struct sockaddr *)&remoteAddr,
-//              &addrSize );
-
 if( acceptSock == INVALID_SOCKET )
   {
-  // It's non-blocking and there is nothing there.
-  // errorBuf.appendChars(
-  //            "Accepted socket is invalid.\n" );
-  return INVALID_SOCKET;
+  Int32 error = WSAGetLastError();
+  // if( error == EAGAIN )
+
+  if( error == WSAEWOULDBLOCK )
+    {
+    // I think the client has to send some data
+    // before it will accept it.
+
+    // StIO::putS( "Socket would block." );
+    return 0;
+    }
+
+
+  StIO::putS( "socket accept error is: " );
+  StIO::printFD( error );
+  StIO::printF( "\n" );
+
+  // StIO::putS( "Socket would block." );
+
+  // Usually this means that it's a
+  // non-blocking socket and there is nothing
+  // there to accept.
+  return 0;
   }
 
-
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wold-style-cast"
+StIO::putS( "Accepted a socket at top." );
 
 // IPv4 or IPv6:
-struct sockaddr* sa = 
+struct sockaddr* sa =
                 (struct sockaddr *)&remoteAddr;
 
 void* sinAddress = nullptr;
 
-if( sa->sa_family != AF_INET )
+// getpeername() does this too.
+
+if( !( (sa->sa_family == AF_INET) ||
+       (sa->sa_family == AF_INET6)) )
   {
-  sinAddress = 
+  StIO::putS( "The sa_family is not right." );
+  return 0;
+  }
+
+if( sa->sa_family == AF_INET )
+  {
+  sinAddress =
           &(((struct sockaddr_in*)sa)->sin_addr);
   }
 else
   {
   // AF_INET6
-  sinAddress = 
+  sinAddress =
       &(((struct sockaddr_in6*)sa)->sin6_addr );
   }
 
-const Int32 bufLast = 1024; 
+const Int32 bufLast = 1024;
 char returnS[bufLast];
 
 // Read this and change it to the right struct.
@@ -540,11 +533,7 @@ for( Int32 count = 0; count < bufLast; count++ )
   fromCBuf.appendChar( returnS[count] );
   }
 
-
-//   printf("server: got connection from %s\n", s);
-
-errorBuf.appendChars(
-                "Accepted a socket.\n" );
+StIO::putS( "Accepted a socket." );
 
 return acceptSock;
 }
@@ -552,7 +541,7 @@ return acceptSock;
 
 
 /*
-====
+
 // IPv4 or IPv6:
 void* SocketsApi::getInAddress(
                            struct sockaddr *sa )
@@ -570,14 +559,11 @@ return &(((struct sockaddr_in6*)sa)->sin6_addr);
 
 Int32 SocketsApi::sendBuf(
                    const SocketCpp sendToSock,
-                   const CharBuf& sendBuf,
-                   CharBuf& errorBuf )
+                   const CharBuf& sendBuf )
 {
 if( sendToSock == INVALID_SOCKET )
   {
-  errorBuf.appendChars(
-   "SocketsWin sendBuf() sendToSock is invalid.\n" );
-
+  StIO::putS( "sendBuf() sendToSock is invalid." );
   return -1;
   }
 
@@ -589,9 +575,11 @@ Int32 result = send( sendToSock,
 
 if( result == SOCKET_ERROR )
   {
-  errorBuf.appendChars(
-             "SocketsApi sendBuf() error.\n" );
-  // WSAGetLastError());
+  StIO::putS( "SocketsApi sendBuf() error." );
+  Int32 error = WSAGetLastError();
+  StIO::printF( "Error is: " );
+  StIO::printFD( error );
+  StIO::printF( "\n" );
   closesocket( sendToSock );
   return -1;
   }
@@ -604,55 +592,43 @@ return result;
 
 bool SocketsApi::receiveBuf(
                    const Uint64 recSock,
-                   CharBuf& recCharBuf,
-                   CharBuf& errorBuf )
+                   CharBuf& recCharBuf )
 {
 if( recSock == INVALID_SOCKET )
   {
-  errorBuf.appendChars(
-   "SocketsApi receiveBuf() recSock is invalid.\n" );
-
+  StIO::putS( "receiveBuf() recSock is invalid." );
   return false;
   }
 
 const Int32 bufLen = 1024 * 32;
 // On the stack.
-
 char recBuf[bufLen];
 
-// Keep reading for a reasonable length of time.
-for( Int32 loops = 0; loops < 2; loops++ )
+Int32 result = recv( recSock, recBuf,
+                              bufLen, 0 );
+
+if( result == 0 )
   {
-  Int32 result = recv( recSock, recBuf,
-                       bufLen, 0 );
-
-  if( result == 0 )
-    {
-    // The connection was _gracefully_ closed.
-    errorBuf.appendChars(
-            "receiveBuf() connection closed.\n" );
-
-    return false;
-    }
-
-  if( result < 0 )
-    {
-    // EAGAIN or EWOULDBLOCK
-
-    Int32 error = WSAGetLastError();
-    errorBuf.appendChars( "socket recv error is: " );
-    Str errorS( error );
-    errorBuf.appendStr( errorS );
-    errorBuf.appendChars( "\n" );
-
-    // This might just be saying it would block.
-    return false;
-    }
-
-  for( Int32 count = 0; count < result; count++ )
-    recCharBuf.appendChar( recBuf[count] );
-
+  // The connection was _gracefully_ closed.
+  StIO::putS( "receiveBuf() connection closed." );
+  return false;
   }
+
+if( result < 0 )
+  {
+  // EAGAIN or EWOULDBLOCK
+
+  Int32 error = WSAGetLastError();
+  StIO::putS( "socket recv error is: " );
+  StIO::printFD( error );
+  StIO::printF( "\n" );
+
+  // This might just be saying it would block.
+  return false;
+  }
+
+for( Int32 count = 0; count < result; count++ )
+  recCharBuf.appendChar( recBuf[count] );
 
 return true;
 }

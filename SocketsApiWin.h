@@ -30,11 +30,13 @@
 // This is only to encapsulate the Windows API.
 
 
+
+
 class SocketsApi
   {
   private:
   Int32 testForCopy = 123;
-  static const SocketCpp InvalidSocket = 0;
+  // static const SocketCpp InvalidSocket = 0;
 
   public:
   SocketsApi( void );
@@ -42,28 +44,25 @@ class SocketsApi
   ~SocketsApi( void );
 
   static void closeSocket( SocketCpp toClose );
+  static void shutdownRead( SocketCpp toClose );
 
-  static SocketCpp openClient( const char* domain,
-                               const char* port,
-                               CharBuf& errorBuf );
+  static bool setNonBlocking(
+                           const SocketCpp toSet );
 
-  static SocketCpp openServer( const char* port,
-                               CharBuf& errorBuf );
+  static SocketCpp connectClient(
+                             const char* domain,
+                             const char* port );
 
-  // static bool checkSelect( SocketCpp servSock,
-  //                         CharBuf& errorBuf );
+  static SocketCpp openServer( const char* port );
 
   static SocketCpp acceptConnect(
                          SocketCpp servSock,
-                         CharBuf& fromCBuf,
-                         CharBuf& errorBuf );
+                         CharBuf& fromCBuf );
 
   static Int32 sendBuf( const SocketCpp sendToSock,
-                        const CharBuf& sendBuf,
-                        CharBuf& errorBuf );
+                        const CharBuf& sendBuf );
 
   static bool receiveBuf( const SocketCpp recSock,
-                          CharBuf& recCharBuf,
-                          CharBuf& errorBuf );
+                          CharBuf& recCharBuf );
 
   };
