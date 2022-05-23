@@ -8,11 +8,55 @@
 // https://www.gnu.org/licenses/gpl-3.0.html
 
 
+
+// A good tutorial:
+// https://beej.us/guide/bgnet/html/
+
+
+
+////////////////////
+// Some notes about sockets programming:
+
+// IPv4 addresses are 4 bytes delimited with
+// dots like: 123.456.789.123
+
+// The loopback address is: 127.0.0.1
+// #define INADDR_LOOPBACK  0x7f000001
+
+// So that's 32 bits.
+
+// IPv6 addresses are two bytes separated by
+// colons like ab12:45cd;39fd: and so on up to
+// 16 bytes.  128 bits.
+// Two colons together means the bytes are zero
+// between the two colons.
+// ab12::45cd;39fd...
+
+// ::1 is the loopback address.
+// Meaning all leading zeros and then a 1.
+
+
+// Get the right byte order:
+// htons() host to network short
+// htonl() host to network long
+// ntohs() network to host short
+// ntohl() network to host long
+
+
+
+///////////////////////////
+// Now for the code:
+
+// There is some ugly stuff in this file, but
+// fortunately it stays only in this compilation
+// unit.  And ugly stuff would never go in
+// a header file.
+
+
 #include "SocketsApiWin.h"
 // #include "SocketsApiLinux.h"
 #include "../CppBase/Casting.h"
 #include "../CppBase/StIO.h"
-
 
 // I hate to have to put a #define statement
 // into any of my code.  But if you need to
@@ -30,7 +74,6 @@
 // #include <windows.h>
 
 
-// For Windows.
 // #include <winsock.h>
 #include <WinSock2.h>
 #include <WS2tcpip.h> // getaddrinfo()
@@ -50,6 +93,18 @@
 // #include <sys/socket.h>
 // #include <netdb.h>
 
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wcast-align"
+
+
+
+// Declare this C function only in this
+// compilation unit.  This is not in any header
+// file.
+bool showAddress( struct sockaddr* sa,
+                          CharBuf& fromCBuf );
 
 
 SocketsApi::SocketsApi( void )
@@ -96,21 +151,27 @@ WSACleanup();
 /*
 SocketCpp SocketsApi::getInvalidSocket( void )
 {
-if( InvalidSocket == INVALID_SOCKET )
+// In Winsock2.h:
+// #define INVALID_SOCKET  (SOCKET)(~0)
+// So this should be all ones.
+
+if( ~(unsigned long long)0 == INVALID_SOCKET )
   return 0;
 
-// This is unreachable code because it is zero.
-return INVALID_SOCKET;
+// This is unreachable code because the above
+// line is true.
+return 0;
 }
 */
 
 
 
+
 void SocketsApi::closeSocket( SocketCpp toClose )
 {
-if( toClose == 0 )
+if( toClose == InvalSock )
   {
-  StIO::putS( "Closing a socket that is zero." );
+  StIO::putS( "Closing an invalid socket." );
   return;
   }
 // For Windows.
@@ -124,7 +185,7 @@ closesocket( toClose );
 
 void SocketsApi::shutdownRead( SocketCpp toClose )
 {
-if( toClose == 0 )
+if( toClose == InvalSock )
   return;
 
 // What is the receive symbol?
@@ -138,10 +199,8 @@ SocketCpp SocketsApi::connectClient(
                         const char* domain,
                         const char* port )
 {
-// result is a linked list.
-// In Linux is it a pointer to a pointer?
-// const struct addrinfo** result;
-
+// result points to the first struct in the
+// linked list.
 struct addrinfo* result = nullptr;
 struct addrinfo* ptr = nullptr;
 struct addrinfo hints;
@@ -157,11 +216,6 @@ hints.ai_socktype = SOCK_STREAM;
 hints.ai_protocol = IPPROTO_TCP;
 
 // Port 443 for https.
-
-// htons() host to network short
-// htonl() host to network long
-// ntohs() network to host short
-// ntohl() network to host long
 
 Int32 status = getaddrinfo(
               domain, // "www.thedomain.com"
@@ -179,26 +233,34 @@ if( status != 0 )
   if( error == WSAHOST_NOT_FOUND )
     StIO::putS( "Host not found." );
 
-  return 0;
+  return InvalSock;
   }
 
 // SOCKET clientSocket = INVALID_SOCKET;
 SocketCpp clientSocket = INVALID_SOCKET;
 
-// Try the possible connections.
-Int32 count = 0;
-for( ptr = result; ptr != nullptr;
-                              ptr = ptr->ai_next )
+ptr = result;
+if( ptr == nullptr )
   {
-  // Make sure nothing is really-bad wrong here.
-  count++;
-  if( count > 5 )
-    {
-    StIO::putS( "SocketWin too many sockets." );
+  StIO::putS( "getaddrinfo got null at zero." );
+  return InvalSock;
+  }
 
-    freeaddrinfo( result );
-    return 0;
-    }
+// Try the possible connections.
+// I don't want to let it go wild on corrupted
+// data, so it will try up to five of them.
+// But it should usually be the first one anyway.
+
+CharBuf fromCBuf;
+
+for( Int32 count = 0; count < 5; count++ )
+  {
+  // ai_addr is a struct sockaddr.
+
+  StIO::putS( "Client connect address:" );
+  fromCBuf.clear();
+  // bool   loop again if this is a bad address.
+  showAddress( ptr->ai_addr, fromCBuf );
 
   clientSocket = socket( ptr->ai_family,
                           ptr->ai_socktype,
@@ -207,43 +269,67 @@ for( ptr = result; ptr != nullptr;
   if( clientSocket == INVALID_SOCKET )
     {
     StIO::putS( "No sockets left for connect." );
-
-    // WSAGetLastError());
     freeaddrinfo( result );
-    return 0;
+    return InvalSock;
     }
 
+  // If it's non blocking then will it block
+  // on connect?
   // You have to do this before you connect().
   if( !setNonBlocking( clientSocket ))
     {
-    StIO::putS( "Client connect setNonBlock false." );
+    closesocket( clientSocket );
+    clientSocket = InvalSock;
+
+    ptr = ptr->ai_next;
+    if( ptr == nullptr )
+      {
+      StIO::putS( "No more addresses to try." );
+      freeaddrinfo( result );
+      return InvalSock;
+      }
+
     continue;
-    // return 0;
     }
 
+  // ai_addr is a struct sockaddr.
+  // Since I already created the socket above,
+  // it already knows the ai_family.
+  // So it can use ai_addr in the right way.
   Int32 connectResult = connect( clientSocket,
-                         ptr->ai_addr,
-                         Casting::U64ToI32(
-                         ptr->ai_addrlen ));
+                        ptr->ai_addr,
+                        Casting::U64ToI32(
+                        ptr->ai_addrlen ));
 
   if( connectResult == SOCKET_ERROR )
     {
-    StIO::putS( "Trying the next socket." );
+    StIO::putS( "Could not connect socket." );
     closesocket( clientSocket );
     clientSocket = INVALID_SOCKET;
-    continue; // Try to connect to the next
-              // valid socket.
+
+    ptr = ptr->ai_next;
+    if( ptr == nullptr )
+      {
+      StIO::putS( "getaddrinfo no more addresses." );
+      freeaddrinfo( result );
+      return InvalSock;
+      }
+
+    continue;
     }
 
-  if( clientSocket != INVALID_SOCKET )
-    break;
-
+  freeaddrinfo( result );
+  break;
   }
 
-StIO::putS( "Connected to " );
-StIO::putS( domain );
+if( clientSocket == InvalSock )
+  {
+  StIO::putS( "Connected to an invalid socket?" );
+  return InvalSock;
+  }
 
-freeaddrinfo( result );
+StIO::putS( "Connected to:" );
+StIO::putS( domain );
 
 return clientSocket;
 }
@@ -269,12 +355,20 @@ Uint32L iMode = 1;
 // C:\Program Files (x86)\Windows Kits\
 //         10\include\10.0.19041.0\um\winsock2.h
 
-// Here's part of the macros it uses.
+// Here are the macros it uses.
+
+// This high bit of a signed number is dealt
+// with in Casting::u32ToI32ForMacro().
+// #define IOC_IN          0x80000000
+
 // #define IOCPARM_MASK    0x7f
 // #define _IOW(x,y,t)
 //   (IOC_IN|(((long)sizeof(t)&IOCPARM_MASK)
 //                 <<16)|((x)<<8)|(y))
 // #define FIONBIO     _IOW('f', 126, u_long)
+// #define _IOW(x,y,t)
+//               (IOC_IN|(((long)sizeof(t)
+//               &IOCPARM_MASK)<<16)|((x)<<8)|(y))
 
 
 Int32 status = ioctlsocket( toSet,
@@ -344,7 +438,7 @@ Int32 status = getaddrinfo(
 if( status != 0 )
   {
   StIO::putS( "Server getaddrinfo error." );
-  return 0;
+  return InvalSock;
   }
 
 // SOCKET serverSocket = INVALID_SOCKET;
@@ -353,12 +447,12 @@ SocketCpp serverSocket = socket(
                           result->ai_socktype,
                           result->ai_protocol );
 
-if( serverSocket == INVALID_SOCKET )
+if( serverSocket == InvalSock )
   {
   StIO::putS( "Server no sockets." );
   // WSAGetLastError());
   freeaddrinfo( result );
-  return 0;
+  return InvalSock;
   }
 
 if( 0 != bind( serverSocket, result->ai_addr,
@@ -368,7 +462,7 @@ if( 0 != bind( serverSocket, result->ai_addr,
   closeSocket( serverSocket );
   StIO::putS( "Server bind error." );
   freeaddrinfo( result );
-  return 0;
+  return InvalSock;
   }
 
 // The backlog could be several hundred in Windows.
@@ -378,7 +472,7 @@ if( 0 != listen( serverSocket, 20 ))
   closeSocket( serverSocket );
   StIO::putS( "Server listen error." );
   freeaddrinfo( result );
-  return 0;
+  return InvalSock;
   }
 
 freeaddrinfo( result );
@@ -386,7 +480,7 @@ freeaddrinfo( result );
 if( !setNonBlocking( serverSocket ))
   {
   StIO::putS( "setNonBlocking returned false." );
-  return 0;
+  return InvalSock;
   }
 
 return serverSocket;
@@ -438,23 +532,18 @@ struct sockaddr_storage remoteAddr;
 Int32 addrSize = sizeof( remoteAddr );
 
 // if( !checkSelect( servSock ))
-  // return 0;
+  // return InvalSock;
 
 // I hate to have to do stuff like this:
 // The new style static_cast won't work here
 // either.
 // static_cast<>()
 
-// Some ugly stuff here.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wold-style-cast"
-#pragma clang diagnostic ignored "-Wcast-align"
-
 SocketCpp acceptSock = accept( servSock,
               (struct sockaddr *)&remoteAddr,
               &addrSize );
 
-if( acceptSock == INVALID_SOCKET )
+if( acceptSock == InvalSock )
   {
   Int32 error = WSAGetLastError();
   // if( error == EAGAIN )
@@ -465,7 +554,7 @@ if( acceptSock == INVALID_SOCKET )
     // before it will accept it.
 
     // StIO::putS( "Socket would block." );
-    return 0;
+    return InvalSock;
     }
 
 
@@ -478,7 +567,7 @@ if( acceptSock == INVALID_SOCKET )
   // Usually this means that it's a
   // non-blocking socket and there is nothing
   // there to accept.
-  return 0;
+  return InvalSock;
   }
 
 StIO::putS( "Accepted a socket at top." );
@@ -487,73 +576,12 @@ StIO::putS( "Accepted a socket at top." );
 struct sockaddr* sa =
                 (struct sockaddr *)&remoteAddr;
 
-void* sinAddress = nullptr;
-
-// getpeername() does this too.
-
-if( !( (sa->sa_family == AF_INET) ||
-       (sa->sa_family == AF_INET6)) )
-  {
-  StIO::putS( "The sa_family is not right." );
-  return 0;
-  }
-
-if( sa->sa_family == AF_INET )
-  {
-  sinAddress =
-          &(((struct sockaddr_in*)sa)->sin_addr);
-  }
-else
-  {
-  // AF_INET6
-  sinAddress =
-      &(((struct sockaddr_in6*)sa)->sin6_addr );
-  }
-
-const Int32 bufLast = 1024;
-char returnS[bufLast];
-
-// Read this and change it to the right struct.
-// Not the struct pointer.
-
-// https://docs.microsoft.com/en-us/windows/win32/api/ws2tcpip/nf-ws2tcpip-inet_ntop
-
-// In WS2tcpip.h
-inet_ntop( sa->sa_family,
-            &sa,
-            returnS, sizeof( returnS ) );
-
-#pragma clang diagnostic pop
-
-for( Int32 count = 0; count < bufLast; count++ )
-  {
-  if( returnS[count] == 0 )
-    break;
-
-  fromCBuf.appendChar( returnS[count] );
-  }
+showAddress( sa, fromCBuf );
 
 StIO::putS( "Accepted a socket." );
 
 return acceptSock;
 }
-
-
-
-/*
-
-// IPv4 or IPv6:
-void* SocketsApi::getInAddress(
-                           struct sockaddr *sa )
-{
-if( sa->sa_family == AF_INET )
-  {
-  return &(((struct sockaddr_in*)sa)->sin_addr);
-  }
-
-return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
-*/
 
 
 
@@ -594,7 +622,7 @@ bool SocketsApi::receiveBuf(
                    const Uint64 recSock,
                    CharBuf& recCharBuf )
 {
-if( recSock == INVALID_SOCKET )
+if( recSock == InvalSock )
   {
   StIO::putS( "receiveBuf() recSock is invalid." );
   return false;
@@ -635,423 +663,108 @@ return true;
 
 
 
-/*
-Error codes:
-
-WSA_INVALID_HANDLE
-6
-Specified event object handle is invalid.
-
-WSA_NOT_ENOUGH_MEMORY
-8
-Insufficient memory available.
-
+bool showAddress( struct sockaddr* sa,
+                          CharBuf& fromCBuf )
+{
+// Some of these structures are generic so that
+// you can cast them as either IPv4 or IPv6.
+// sockaddr_storage is the largest generic struct
+// so it can be cast to smaller structs safely.
+
+// The new style static_cast won't work here
+// because one struct isn't a sub class of
+// another struct.
+// static_cast<>()
+
+// struct in_addr {
+// Uint32 s_addr;
+// };
+
+// This is generic for either IPv4 or IPv6.
+//struct sockaddr {
+//  u_short sa_family;
+//  char sa_data[14]; // filler
+// };
+
+// Size of struct sockaddr_storage.
+// #define _SS_SIZE 128
+
+//struct sockaddr_storage {
+// sa_family_t ss_family;
+// filler up to the 128 bytes.
+// };
+
+// For IPv4.
+// struct sockaddr_in {
+//        short   sin_family;
+//        u_short sin_port;
+//        struct  in_addr sin_addr;
+//        char    sin_zero[8];
+// };
+
+// For IPv6.
+// struct sockaddr_in6 {
+//        u_short   sin6_family;
+//        u_short sin6_port;
+//        u_short sin6_flowinfo;
+//        struct  in6_addr sin6_addr;
+//        Uint32 sin6_scope_id;
+// };
+
+// getpeername() does this too.
+
+
+// void* sinAddress = nullptr;
+
+if( !( (sa->sa_family == AF_INET) ||
+       (sa->sa_family == AF_INET6)) )
+  {
+  StIO::putS( "The sa_family is not right." );
+  return false;
+  }
+
+if( sa->sa_family == AF_INET )
+  {
+  StIO::putS( "IPv4 address:" );
+  // sinAddress =
+  //      &(((struct sockaddr_in*)sa)->sin_addr);
+  }
+else
+  {
+  // AF_INET6
+  StIO::putS( "IPv6 address:" );
+  // sinAddress =
+     // &(((struct sockaddr_in6*)sa)->sin6_addr );
+  }
+
+const Int32 bufLast = 1024;
+char returnS[bufLast];
+
+// https://docs.microsoft.com/en-us/windows/win32/api/ws2tcpip/nf-ws2tcpip-inet_ntop
+
+// In WS2tcpip.h
+if( nullptr == inet_ntop( sa->sa_family,
+            sa,
+            returnS, sizeof( returnS ) ))
+  {
+  StIO::putS( "Error getting the address string." );
+  return false;
+  }
+
+for( Int32 count = 0; count < bufLast; count++ )
+  {
+  if( returnS[count] == 0 )
+    break;
+
+  fromCBuf.appendChar( returnS[count] );
+  }
+
+StIO::putCharBuf( fromCBuf );
+StIO::putS( " " );
+
+return true;
+}
 
-WSA_INVALID_PARAMETER
-87
-An application used a Windows Sockets function
- which directly maps to a Windows function.
- The Windows function is indicating a problem
- with one or more parameters.
-
 
-WSA_OPERATION_ABORTED
-995
-Overlapped operation aborted.
 
-WSA_IO_INCOMPLETE
-996
-Overlapped I/O event object not in signaled state.
-
-WSA_IO_PENDING
-997
-Overlapped operations will complete later.
-
-WSAEINTR
-10004
-Interrupted function call.
-A blocking operation was interrupted by a call
- to WSACancelBlockingCall.
-
-WSAEBADF
-10009
-File handle is not valid.
-
-WSAEACCES
-10013
-Permission denied.
-
-WSAEFAULT
-10014
-Bad address.
-
-WSAEINVAL
-10022
-Invalid argument.
-
-
-WSAEMFILE
-10024
-Too many open files.
-
-WSAEWOULDBLOCK
-10035
-It is normal for WSAEWOULDBLOCK to be reported
- as the result from calling connect on a
- nonblocking SOCK_STREAM socket, since some
- time must elapse for the connection to be
- established.
-
-WSAEINPROGRESS
-10036
-Operation now in progress.
-
-WSAEALREADY
-10037
-Operation already in progress.
-
-WSAENOTSOCK
-10038
-Socket operation on nonsocket.
-
-WSAEDESTADDRREQ
-10039
-Destination address required.
-
-WSAEMSGSIZE
-10040
-Message too long.
-
-WSAEPROTOTYPE
-10041
-Protocol wrong type for socket.
-
-WSAENOPROTOOPT
-10042
-Bad protocol option.
-
-WSAEPROTONOSUPPORT
-10043
-Protocol not supported.
-
-WSAESOCKTNOSUPPORT
-10044
-Socket type not supported.
-
-WSAEOPNOTSUPP
-10045
-Operation not supported.
-
-WSAEPFNOSUPPORT
-10046
-Protocol family not supported.
-
-WSAEAFNOSUPPORT
-10047
-Address family not supported by protocol family.
-
-WSAEADDRINUSE
-10048
-Address already in use.
-
-WSAEADDRNOTAVAIL
-10049
-Cannot assign requested address.
-
-WSAENETDOWN
-10050
-Network is down.
-
-WSAENETUNREACH
-10051
-Network is unreachable.
-
-WSAENETRESET
-10052
-Network dropped connection on reset.
-
-WSAECONNABORTED
-10053
-Software caused connection abort.
-
-WSAECONNRESET
-10054
-Connection reset by peer.
-
-WSAENOBUFS
-10055
-No buffer space available.
-
-WSAEISCONN
-10056
-Socket is already connected.
-
-WSAENOTCONN
-10057
-Socket is not connected.
-
-WSAESHUTDOWN
-10058
-Cannot send after socket shutdown.
-
-WSAETOOMANYREFS
-10059
-Too many references.
-Too many references to some kernel object.
-
-WSAETIMEDOUT
-10060
-Connection timed out.
-
-WSAECONNREFUSED
-10061
-Connection refused.
-
-WSAELOOP
-10062
-Cannot translate name.
-Cannot translate a name.
-
-WSAENAMETOOLONG
-10063
-Name too long.
-A name component or a name was too long.
-
-WSAEHOSTDOWN
-10064
-Host is down.
-
-WSAEHOSTUNREACH
-10065
-No route to host.
-
-WSAENOTEMPTY
-10066
-Directory not empty.
-Cannot remove a directory that is not empty.
-
-WSAEPROCLIM
-10067
-Too many processes.
-
-WSAEUSERS
-10068
-User quota exceeded.
-Ran out of user quota.
-
-WSAEDQUOT
-10069
-Disk quota exceeded.
-Ran out of disk quota.
-
-WSAESTALE
-10070
-Stale file handle reference.
-The file handle reference is no longer available.
-
-WSAEREMOTE
-10071
-Item is remote.
-The item is not available locally.
-
-WSASYSNOTREADY
-10091
-Network subsystem is unavailable.
-
-WSAVERNOTSUPPORTED
-10092
-Winsock.dll version out of range.
-
-WSANOTINITIALISED
-10093
-Successful WSAStartup not yet performed.
-
-WSAEDISCON
-10101
-Graceful shutdown in progress.
-
-WSAENOMORE
-10102
-No more results.
-
-WSAECANCELLED
-10103
-Call has been canceled.
-
-WSAEINVALIDPROCTABLE
-10104
-Procedure call table is invalid.
-
-WSAEINVALIDPROVIDER
-10105
-Service provider is invalid.
-
-WSAEPROVIDERFAILEDINIT
-10106
-Service provider failed to initialize.
-
-WSASYSCALLFAILURE
-10107
-System call failure.
-A system call that should never fail has failed.
-
-WSASERVICE_NOT_FOUND
-10108
-Service not found.
-No such service is known.
-
-WSATYPE_NOT_FOUND
-10109
-Class type not found.
-The specified class was not found.
-
-WSA_E_NO_MORE
-10110
-No more results.
-
-WSA_E_CANCELLED
-10111
-Call was canceled.
-
-WSAEREFUSED
-10112
-Database query was refused.
-
-WSAHOST_NOT_FOUND
-11001
-Host not found.
-No such host is known.
-
-WSATRY_AGAIN
-11002
-Nonauthoritative host not found.
-
-WSANO_RECOVERY
-11003
-This is a nonrecoverable error.
-
-WSANO_DATA
-11004
-Valid name, no data record of requested type.
-
-WSA_QOS_RECEIVERS
-11005
-QoS receivers.
-At least one QoS reserve has arrived.
-
-WSA_QOS_SENDERS
-11006
-QoS senders.
-At least one QoS send path has arrived.
-
-WSA_QOS_NO_SENDERS
-11007
-No QoS senders.
-There are no QoS senders.
-
-WSA_QOS_NO_RECEIVERS
-11008
-QoS no receivers.
-There are no QoS receivers.
-
-WSA_QOS_REQUEST_CONFIRMED
-11009
-QoS request confirmed.
-The QoS reserve request has been confirmed.
-
-WSA_QOS_ADMISSION_FAILURE
-11010
-QoS admission error.
-A QoS error occurred due to lack of resources.
-
-WSA_QOS_POLICY_FAILURE
-11011
-QoS policy failure.
-
-WSA_QOS_BAD_STYLE
-11012
-QoS bad style.
-An unknown or conflicting QoS style was encountered.
-
-WSA_QOS_BAD_OBJECT
-11013
-QoS bad object.
-
-WSA_QOS_TRAFFIC_CTRL_ERROR
-11014
-QoS traffic control error.
-
-WSA_QOS_GENERIC_ERROR
-11015
-QoS generic error.
-A general QoS error.
-
-WSA_QOS_ESERVICETYPE
-11016
-QoS service type error.
-
-WSA_QOS_EFLOWSPEC
-11017
-QoS flowspec error.
-
-WSA_QOS_EPROVSPECBUF
-11018
-Invalid QoS provider buffer.
-An invalid QoS provider-specific buffer.
-
-WSA_QOS_EFILTERSTYLE
-11019
-Invalid QoS filter style.
-An invalid QoS filter style was used.
-
-WSA_QOS_EFILTERTYPE
-11020
-Invalid QoS filter type.
-An invalid QoS filter type was used.
-
-WSA_QOS_EFILTERCOUNT
-11021
-Incorrect QoS filter count.
-
-WSA_QOS_EOBJLENGTH
-11022
-Invalid QoS object length.
-
-WSA_QOS_EFLOWCOUNT
-11023
-Incorrect QoS flow count.
-
-WSA_QOS_EUNKOWNPSOBJ
-11024
-Unrecognized QoS object.
-
-WSA_QOS_EPOLICYOBJ
-11025
-Invalid QoS policy object.
-
-WSA_QOS_EFLOWDESC
-11026
-Invalid QoS flow descriptor.
-
-WSA_QOS_EPSFLOWSPEC
-11027
-Invalid QoS provider-specific flowspec.
-
-WSA_QOS_EPSFILTERSPEC
-11028
-Invalid QoS provider-specific filterspec.
-
-WSA_QOS_ESDMODEOBJ
-11029
-Invalid QoS shape discard mode object.
-
-WSA_QOS_ESHAPERATEOBJ
-11030
-Invalid QoS shaping rate object.
-
-WSA_QOS_RESERVED_PETYPE
-11031
-Reserved policy QoS element type.
-
-
-*/
+#pragma clang diagnostic pop

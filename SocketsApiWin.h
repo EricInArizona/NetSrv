@@ -36,9 +36,12 @@ class SocketsApi
   {
   private:
   Int32 testForCopy = 123;
-  // static const SocketCpp InvalidSocket = 0;
 
   public:
+  static const Uint64 InvalSock =
+                      ~static_cast<Uint64>( 0 );
+
+
   SocketsApi( void );
   SocketsApi( const SocketsApi &in );
   ~SocketsApi( void );
@@ -64,5 +67,8 @@ class SocketsApi
 
   static bool receiveBuf( const SocketCpp recSock,
                           CharBuf& recCharBuf );
+
+  // static SocketCpp getInvalidSocket( void );
+
 
   };
