@@ -25,9 +25,9 @@
 //                          0x7f 00 00 01
 // So that's 32 bits.
 
-// IPv6 addresses are two bytes separated by
-// colons like ab12:45cd:39fd: and so on up to
-// 16 bytes.  128 bits.
+// IPv6 addresses are shown as two bytes
+// separated by colons like ab12:45cd:39fd: and
+// so on up to 16 bytes.  128 bits.
 // Two colons together means the bytes are zero
 // between the two colons.
 // ab12::45cd:39fd...
@@ -41,7 +41,6 @@
 // htonl() host to network long
 // ntohs() network to host short
 // ntohl() network to host long
-
 
 
 ///////////////////////////
@@ -99,7 +98,7 @@
 // this compilation unit.  It does not get
 // #included in anything else.  So nothing
 // else sees it.  It's not an inner class,
-// but a privately used class.
+// a nested class, but a privately used class.
 
 
 class GetAddress
@@ -113,13 +112,63 @@ class GetAddress
   GetAddress( void );
   ~GetAddress( void );
   bool getAddressInfo( const char* domain,
-                       const char* port );
+                       const char* port,
+                       const bool isServer );
 
-  struct sockaddr* getSockAddrPt( void );
+  inline sockaddr* getSockAddrPt( void )
+    {
+    if( nextResultPt == nullptr )
+      return nullptr;
+
+    return nextResultPt->ai_addr;
+    }
+
+  inline Uint64 getAddrLength( void )
+    {
+    if( nextResultPt == nullptr )
+      return 0;
+
+    return nextResultPt->ai_addrlen;
+    }
+
+  inline const char* getCanonName( void )
+    {
+    if( nextResultPt == nullptr )
+      return nullptr;
+
+    return nextResultPt->ai_canonname;
+    }
+
   bool moveToNextAddr( void );
 
-  // bool showAddress( struct sockaddr* sa,
-  //                  CharBuf& fromCBuf );
+  bool showAddress( struct sockaddr* sa,
+                    CharBuf& fromCBuf );
+
+  inline Int32 getFamily( void )
+    {
+    if( nextResultPt == nullptr )
+      return -1;
+
+    return nextResultPt->ai_family;
+    }
+
+  inline Int32 getSockType( void )
+    {
+    if( nextResultPt == nullptr )
+      return -1;
+
+    return nextResultPt->ai_socktype;
+    }
+
+  inline Int32 getProtocol( void )
+    {
+    if( nextResultPt == nullptr )
+      return -1;
+
+    return nextResultPt->ai_protocol;
+    }
+
+
 
   };
 
@@ -139,9 +188,9 @@ if( resultList != nullptr )
 }
 
 
-
 bool GetAddress::getAddressInfo( const char* domain,
-                                 const char* port )
+                              const char* port,
+                              const bool isServer )
 {
 // result points to the first struct in the
 // linked list.
@@ -159,6 +208,18 @@ hints.ai_family = AF_UNSPEC;
 
 hints.ai_socktype = SOCK_STREAM;
 hints.ai_protocol = IPPROTO_TCP;
+
+
+// If it's the server.
+if( domain == nullptr )
+  {
+  StIO::putS( "Use localhost, not null." );
+  return false;
+  }
+
+if( isServer )
+  hints.ai_flags = AI_PASSIVE;
+
 
 // Port 443 for https.
 
@@ -210,83 +271,11 @@ return true;
 
 
 
-// This points to either a struct in_addr
-// or a struct in6_addr.
-void* GetAddress::getSockAddrPt( void )
-{
-// For IPv4.
-// struct sockaddr_in {
-//        short   sin_family;
-//        u_short sin_port;
-//        struct  in_addr sin_addr;
-//        char    sin_zero[8];
-// };
-
-// For IPv6.
-// struct sockaddr_in6 {
-//        u_short   sin6_family;
-//        u_short sin6_port;
-//        u_short sin6_flowinfo;
-//        struct  in6_addr sin6_addr;
-//        Uint32 sin6_scope_id;
-// };
-
-if( !( (nextResultPt->ai_family == AF_INET) ||
-       (nextResultPt->ai_family == AF_INET6)) )
-  {
-  StIO::putS( "getSockAddr ai_family not right." );
-  return nullptr;
-  }
-
-// The sockets connect() function needs an
-// ai_addr is that right?
-
-void* addr;
-
-if( nextResultPt->ai_family == AF_INET )
-  {
-  StIO::putS( "IPv4 address:" );
-  struct sockaddr_in* ipv4 =
-              (struct sockaddr_in*)nextResultPt->
-                                     ai_addr;
-
-  // struct in_addr {
-  // Uint32 s_addr;
-  // };
-
-  addr = &(ipv4->sin_addr);
-  }
-else
-  {
-  StIO::putS( "IPv6 address:" );
-  struct sockaddr_in6* ipv6 =
-            (struct sockaddr_in6*)nextResultPt->
-                                         ai_addr;
-  addr = &(ipv6->sin6_addr);
-
-  }
-
-return addr;
-}
-
-
-
 bool GetAddress::showAddress( struct sockaddr* sa,
                               CharBuf& fromCBuf )
 {
-// Some of these structures are generic so that
-// you can cast them as either IPv4 or IPv6.
-// sockaddr_storage is the largest generic struct
-// so it can be cast to smaller structs safely.
-
 // struct in_addr {
 // Uint32 s_addr;
-// };
-
-// This is generic for either IPv4 or IPv6.
-//struct sockaddr {
-//  u_short sa_family;
-//  char sa_data[14]; // filler
 // };
 
 // Size of struct sockaddr_storage.
@@ -317,7 +306,13 @@ bool GetAddress::showAddress( struct sockaddr* sa,
 // getpeername() does this too.
 
 
-// void* sinAddress = nullptr;
+void* sinAddress = nullptr;
+
+if( sa == nullptr )
+  {
+  StIO::putS( "The sa was null." );
+  return false;
+  }
 
 if( !( (sa->sa_family == AF_INET) ||
        (sa->sa_family == AF_INET6)) )
@@ -329,15 +324,15 @@ if( !( (sa->sa_family == AF_INET) ||
 if( sa->sa_family == AF_INET )
   {
   StIO::putS( "IPv4 address:" );
-  // sinAddress =
-     //   &(((struct sockaddr_in*)sa)->sin_addr);
+  sinAddress =
+         &(((struct sockaddr_in*)sa)->sin_addr);
   }
 else
   {
   // AF_INET6
   StIO::putS( "IPv6 address:" );
-  // sinAddress =
-     // &(((struct sockaddr_in6*)sa)->sin6_addr );
+  sinAddress =
+    &(((struct sockaddr_in6*)sa)->sin6_addr );
   }
 
 const Int32 bufLast = 1024;
@@ -345,9 +340,12 @@ char returnS[bufLast];
 
 // https://docs.microsoft.com/en-us/windows/win32/api/ws2tcpip/nf-ws2tcpip-inet_ntop
 
+
+// inet_pton()
+
 // In WS2tcpip.h
 if( nullptr == inet_ntop( sa->sa_family,
-            sa,
+            sinAddress,
             returnS, sizeof( returnS ) ))
   {
   StIO::putS( "Error getting the address string." );
@@ -468,14 +466,14 @@ GetAddress getAddress;
 // Port 443 for https.
 
 if( !getAddress.getAddressInfo( domain,
-                                port ))
+                                port, false ))
   {
   StIO::putS( "connect() could not get address." );
   return InvalSock;
   }
 
 // SOCKET clientSocket = INVALID_SOCKET;
-SocketCpp clientSocket = INVALID_SOCKET;
+SocketCpp clientSocket = InvalSock;
 
 // Try the possible connections.
 // I don't want to let it go wild on corrupted
@@ -488,71 +486,66 @@ for( Int32 count = 0; count < 5; count++ )
   {
   StIO::putS( "Client connect address:" );
   fromCBuf.clear();
-  // bool   loop again if this is a bad address.
-  getAddress.showAddress( ptr->ai_addr, fromCBuf );
 
-/*
-  // struct sockaddr* addr = GetAddress::getSockAddrPt( void )
+  sockaddr* addr = getAddress.getSockAddrPt();
 
-  clientSocket = socket( ptr->ai_family,
-                          ptr->ai_socktype,
-                          ptr->ai_protocol );
+  if( !getAddress.showAddress( addr, fromCBuf ))
+    {
+    if( !getAddress.moveToNextAddr())
+      return InvalSock;
+
+    continue;
+    }
+
+  clientSocket = socket( getAddress.getFamily(),
+                     getAddress.getSockType(),
+                     getAddress.getProtocol() );
 
   if( clientSocket == INVALID_SOCKET )
     {
     StIO::putS( "No sockets left for connect." );
-    freeaddrinfo( result );
     return InvalSock;
     }
 
   // If it's non blocking then will it block
   // on connect?
-  // You have to do this before you connect().
+  // Do you have to do this before you connect()?
   if( !setNonBlocking( clientSocket ))
     {
+    StIO::putS( "False on setNonBlocking." );
     closesocket( clientSocket );
     clientSocket = InvalSock;
-
-    ptr = ptr->ai_next;
-    if( ptr == nullptr )
+    if( !getAddress.moveToNextAddr())
       {
       StIO::putS( "No more addresses to try." );
-      freeaddrinfo( result );
       return InvalSock;
       }
 
     continue;
     }
 
-  // ai_addr is a struct sockaddr.
-  // Since I already created the socket above,
-  // it already knows the ai_family.
-  // So it can use ai_addr in the right way.
   Int32 connectResult = connect( clientSocket,
-                        ptr->ai_addr,
-                        Casting::U64ToI32(
-                        ptr->ai_addrlen ));
+             addr,
+             Casting::U64ToI32(
+             getAddress.getAddrLength() ));
 
   if( connectResult == SOCKET_ERROR )
     {
     StIO::putS( "Could not connect socket." );
     closesocket( clientSocket );
     clientSocket = INVALID_SOCKET;
-
-    ptr = ptr->ai_next;
-    if( ptr == nullptr )
+    if( !getAddress.moveToNextAddr())
       {
-      StIO::putS( "getaddrinfo no more addresses." );
-      freeaddrinfo( result );
+      StIO::putS( "No more addresses to try." );
       return InvalSock;
       }
 
     continue;
     }
 
-  freeaddrinfo( result );
+  // If it got this far it got a connected
+  // socket.
   break;
-*/
   }
 
 if( clientSocket == InvalSock )
@@ -626,74 +619,47 @@ return true;
 
 SocketCpp SocketsApi::openServer( const char* port )
 {
-// For the server class...
-// Check the stats and hacking info for disallowed
+GetAddress getAddress;
+
+if( !getAddress.getAddressInfo( domain,
+                                port,
+                                true ))
+  {
+  StIO::putS( 
+       "openServer() could not get address." );
+  return InvalSock;
+  }
+
+
+k the stats and hacking info for disallowed
 // IP addresses and things.
-// Clients connecting from the same NAT address.
-
-// result is a linked list.
-// const struct addrinfo** result;
-
-struct addrinfo* result = nullptr;
-// struct addrinfo* addrPtr = nullptr;
-struct addrinfo hints;
-
-// memset( &hints, 0, sizeof( hints ));
-ZeroMemory( &hints, sizeof(hints) );
-
-// It's unspecified so it's either IPV4 or IPV6.
-
-hints.ai_family = AF_UNSPEC;
-
-hints.ai_socktype = SOCK_STREAM;
-hints.ai_protocol = IPPROTO_TCP;
-hints.ai_flags = AI_PASSIVE; // Get the IP.
-
-
-// Port 443 for https.
-
-// getaddrinfo is in ws2tcpip.h.
 
 // The domain can be "localhost".
 // An empty string means all addresses on the local
 // computer are returned.
-// On Linux is it nullptr instead of ""?
 // Make it the IP address if you wanted to bind
 // it to a specific IP address.
 
-Int32 status = getaddrinfo(
-              "", // "www.thedomain.com"
-              port, // "443" "https", "ftp", etc.
-              &hints,
-              &result );
-
-if( status != 0 )
-  {
-  StIO::putS( "Server getaddrinfo error." );
-  return InvalSock;
-  }
-
 // SOCKET serverSocket = INVALID_SOCKET;
 SocketCpp serverSocket = socket(
-                          result->ai_family,
-                          result->ai_socktype,
-                          result->ai_protocol );
+                      getAddress.getFamily(),
+                      getAddress.getSockType(),
+                      getAddress.getProtocol() );
 
 if( serverSocket == InvalSock )
   {
   StIO::putS( "Server no sockets." );
   // WSAGetLastError());
-  freeaddrinfo( result );
   return InvalSock;
   }
 
-if( 0 != bind( serverSocket, result->ai_addr,
+if( 0 != bind( serverSocket, getAddress.
+               getSockAddrPt(),
                Casting::U64ToI32(
-               result->ai_addrlen )))
+               getAddress.getAddrLength() )))
   {
   closeSocket( serverSocket );
   StIO::putS( "Server bind error." );
-  freeaddrinfo( result );
   return InvalSock;
   }
 
@@ -703,11 +669,8 @@ if( 0 != listen( serverSocket, 20 ))
   {
   closeSocket( serverSocket );
   StIO::putS( "Server listen error." );
-  freeaddrinfo( result );
   return InvalSock;
   }
-
-freeaddrinfo( result );
 
 if( !setNonBlocking( serverSocket ))
   {
@@ -759,10 +722,13 @@ SocketCpp SocketsApi::acceptConnect(
                          CharBuf& fromCBuf )
 {
 fromCBuf.clear();
+// servSock = InvalSock;
 return servSock;
 /*
 //  Local loopback: 127.0.0.1
 
+// sockaddr_storage is big enough to hold IPv6
+// or IPv4.
 struct sockaddr_storage remoteAddr;
 Int32 addrSize = sizeof( remoteAddr );
 
