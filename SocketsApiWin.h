@@ -38,7 +38,7 @@ class SocketsApi
   Int32 testForCopy = 123;
 
   public:
-  static const Uint64 InvalSock =
+  static const SocketCpp InvalSock =
                       ~static_cast<Uint64>( 0 );
 
 

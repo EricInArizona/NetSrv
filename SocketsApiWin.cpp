@@ -474,6 +474,8 @@ if( !getAddress.getAddressInfo( domain, port,
   return InvalSock;
   }
 
+StIO::putS( "Got addresses." );
+
 // SOCKET clientSocket = INVALID_SOCKET;
 SocketCpp clientSocket = InvalSock;
 
@@ -494,12 +496,14 @@ for( Int32 count = 0; count < 5; count++ )
   Str showAddr = GetAddress::getAddressStr( addr );
   if( showAddr.getSize() == 0 )
     {
+    StIO::putS( "showAddr size is zero." );
     if( !getAddress.moveToNextAddr())
       return InvalSock;
 
     continue;
     }
 
+  StIO::putS( "Got showAddr." );
   fromCBuf.appendStr( showAddr );
   StIO::putCharBuf( fromCBuf );
   StIO::putS( " " );
@@ -514,31 +518,27 @@ for( Int32 count = 0; count < 5; count++ )
     return InvalSock;
     }
 
-  // If it's non blocking then will it block
-  // on connect?
-  // Do you have to do this before you connect()?
-  if( !setNonBlocking( clientSocket ))
-    {
-    StIO::putS( "False on setNonBlocking." );
-    closesocket( clientSocket );
-    clientSocket = InvalSock;
-    if( !getAddress.moveToNextAddr())
-      {
-      StIO::putS( "No more addresses to try." );
-      return InvalSock;
-      }
-
-    continue;
-    }
+  StIO::putS( "About to connect." );
 
   Int32 connectResult = connect( clientSocket,
-             addr,
+             getAddress.getSockAddrPt(),
              Casting::U64ToI32(
              getAddress.getAddrLength() ));
 
   if( connectResult == SOCKET_ERROR )
     {
     StIO::putS( "Could not connect socket." );
+    Int32 error = WSAGetLastError();
+    if( error == WSAEWOULDBLOCK )
+      {
+      StIO::putS( "Socket would block." );
+      }
+
+    StIO::putS( "socket connect failed." );
+    StIO::printF( "Error is: " );
+    StIO::printFD( error );
+    StIO::printF( "\n" );
+
     closesocket( clientSocket );
     clientSocket = INVALID_SOCKET;
     if( !getAddress.moveToNextAddr())
@@ -559,6 +559,17 @@ if( clientSocket == InvalSock )
   {
   StIO::putS( "Connected to an invalid socket?" );
   return InvalSock;
+  }
+
+// You can't set it to nonblocking before you
+// connect because you'd get the error that
+// it would block when trying to connect.
+
+if( !setNonBlocking( clientSocket ))
+  {
+  StIO::putS( "False on setNonBlocking." );
+  // closesocket( clientSocket );
+  // clientSocket = InvalSock;
   }
 
 StIO::putS( "Connected to:" );
@@ -652,7 +663,7 @@ if( !getAddress.getAddressInfo( ipAddress,
   }
 
 CharBuf fromCBuf;
-Str showAddr = GetAddress::getAddressStr( 
+Str showAddr = GetAddress::getAddressStr(
                        getAddress.getSockAddrPt() );
 if( showAddr.getSize() == 0 )
   {
@@ -791,28 +802,23 @@ if( acceptSock == InvalSock )
   return InvalSock;
   }
 
-StIO::putS( "Accepted a socket at top." );
+// StIO::putS( "Accepted a socket at top." );
 
 // IPv4 or IPv6:
 struct sockaddr* sa =
                 (struct sockaddr *)&remoteAddr;
 
-// StIO::putS( "Accepted a socket from." );
-// GetAddress::showAddress( sa, fromCBuf );
+// Pass an index of IP addresses to deny.
+// Make a fast index of addresses.
 
-Str showAddr = GetAddress::getAddressStr( 
-                       getAddress.getSockAddrPt() );
+Str showAddr = GetAddress::getAddressStr( sa );
 if( showAddr.getSize() == 0 )
   {
   StIO::putS( "No IP address for the server." );
-  // if( !getAddress.moveToNextAddr())
-
   return InvalSock;
-  // continue;
   }
 
-=====
-StIO::putS( "Server IP address:" );
+StIO::putS( "Accepted IP address:" );
 fromCBuf.appendStr( showAddr );
 StIO::putCharBuf( fromCBuf );
 StIO::putS( " " );
