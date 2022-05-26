@@ -887,14 +887,17 @@ if( result == 0 )
 
 if( result < 0 )
   {
-  // EAGAIN or EWOULDBLOCK
-
   Int32 error = WSAGetLastError();
+  // EAGAIN or EWOULDBLOCK
+  if( error == WSAEWOULDBLOCK )
+    {
+    // StIO::putS( "socket recv would block." );
+    return false; // Not an error.
+    }
+
   StIO::putS( "socket recv error is: " );
   StIO::printFD( error );
   StIO::printF( "\n" );
-
-  // This might just be saying it would block.
   return false;
   }
 
