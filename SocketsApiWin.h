@@ -56,7 +56,10 @@ class SocketsApi
                              const char* domain,
                              const char* port );
 
-  static SocketCpp openServer( const char* port );
+  static SocketCpp openServer(
+                      const char* ipAddress,
+                      const char* port,
+                      const bool useIPv4Only );
 
   static SocketCpp acceptConnect(
                          SocketCpp servSock,

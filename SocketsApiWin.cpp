@@ -113,7 +113,8 @@ class GetAddress
   ~GetAddress( void );
   bool getAddressInfo( const char* domain,
                        const char* port,
-                       const bool isServer );
+                       const bool isServer,
+                       const bool useIPv4Only );
 
   inline sockaddr* getSockAddrPt( void )
     {
@@ -141,8 +142,7 @@ class GetAddress
 
   bool moveToNextAddr( void );
 
-  bool showAddress( struct sockaddr* sa,
-                    CharBuf& fromCBuf );
+  static Str getAddressStr( struct sockaddr* sa );
 
   inline Int32 getFamily( void )
     {
@@ -188,10 +188,14 @@ if( resultList != nullptr )
 }
 
 
-bool GetAddress::getAddressInfo( const char* domain,
-                              const char* port,
-                              const bool isServer )
+bool GetAddress::getAddressInfo(
+                           const char* domain,
+                           const char* port,
+                           const bool isServer,
+                           const bool useIPv4Only )
 {
+// StIO::putS( "getAddressInfo called." );
+
 // result points to the first struct in the
 // linked list.
 // The getaddrinfo() function creates the space
@@ -204,18 +208,18 @@ bool GetAddress::getAddressInfo( const char* domain,
 ZeroMemory( &hints, sizeof( hints ) );
 
 // It's unspecified so it's either IPV4 or IPV6.
-hints.ai_family = AF_UNSPEC;
+// or AF_UNSPEC.
+// AF_INET6 is IPv6.
+if( useIPv4Only )
+  hints.ai_family = AF_INET; // IPv4
+else
+  hints.ai_family = AF_UNSPEC;
 
 hints.ai_socktype = SOCK_STREAM;
 hints.ai_protocol = IPPROTO_TCP;
 
 
-// If it's the server.
-if( domain == nullptr )
-  {
-  StIO::putS( "Use localhost, not null." );
-  return false;
-  }
+// if( domain == nullptr )
 
 if( isServer )
   hints.ai_flags = AI_PASSIVE;
@@ -271,9 +275,11 @@ return true;
 
 
 
-bool GetAddress::showAddress( struct sockaddr* sa,
-                              CharBuf& fromCBuf )
+Str GetAddress::getAddressStr(
+                             struct sockaddr* sa )
 {
+CharBuf fromCBuf;
+
 // struct in_addr {
 // Uint32 s_addr;
 // };
@@ -303,43 +309,39 @@ bool GetAddress::showAddress( struct sockaddr* sa,
 //        Uint32 sin6_scope_id;
 // };
 
-// getpeername() does this too.
-
+// getpeername()
 
 void* sinAddress = nullptr;
 
 if( sa == nullptr )
   {
-  StIO::putS( "The sa was null." );
-  return false;
+  StIO::putS( "The sa was null in getAddressStr." );
+  return Str( "" );
   }
 
 if( !( (sa->sa_family == AF_INET) ||
        (sa->sa_family == AF_INET6)) )
   {
   StIO::putS( "The sa_family is not right." );
-  return false;
+  return Str( "" );
   }
 
 if( sa->sa_family == AF_INET )
   {
-  StIO::putS( "IPv4 address:" );
+  // StIO::putS( "IPv4 address:" );
   sinAddress =
          &(((struct sockaddr_in*)sa)->sin_addr);
   }
 else
   {
   // AF_INET6
-  StIO::putS( "IPv6 address:" );
+  // StIO::putS( "IPv6 address:" );
   sinAddress =
     &(((struct sockaddr_in6*)sa)->sin6_addr );
   }
 
 const Int32 bufLast = 1024;
 char returnS[bufLast];
-
-// https://docs.microsoft.com/en-us/windows/win32/api/ws2tcpip/nf-ws2tcpip-inet_ntop
-
 
 // inet_pton()
 
@@ -349,7 +351,7 @@ if( nullptr == inet_ntop( sa->sa_family,
             returnS, sizeof( returnS ) ))
   {
   StIO::putS( "Error getting the address string." );
-  return false;
+  return Str( "" );
   }
 
 for( Int32 count = 0; count < bufLast; count++ )
@@ -363,7 +365,7 @@ for( Int32 count = 0; count < bufLast; count++ )
 StIO::putCharBuf( fromCBuf );
 StIO::putS( " " );
 
-return true;
+return fromCBuf.getStr();
 }
 
 
@@ -465,8 +467,8 @@ GetAddress getAddress;
 
 // Port 443 for https.
 
-if( !getAddress.getAddressInfo( domain,
-                                port, false ))
+if( !getAddress.getAddressInfo( domain, port,
+                                false, false ))
   {
   StIO::putS( "connect() could not get address." );
   return InvalSock;
@@ -489,13 +491,18 @@ for( Int32 count = 0; count < 5; count++ )
 
   sockaddr* addr = getAddress.getSockAddrPt();
 
-  if( !getAddress.showAddress( addr, fromCBuf ))
+  Str showAddr = GetAddress::getAddressStr( addr );
+  if( showAddr.getSize() == 0 )
     {
     if( !getAddress.moveToNextAddr())
       return InvalSock;
 
     continue;
     }
+
+  fromCBuf.appendStr( showAddr );
+  StIO::putCharBuf( fromCBuf );
+  StIO::putS( " " );
 
   clientSocket = socket( getAddress.getFamily(),
                      getAddress.getSockType(),
@@ -616,22 +623,52 @@ return true;
 }
 
 
-
-SocketCpp SocketsApi::openServer( const char* port )
+SocketCpp SocketsApi::openServer(
+                          const char* ipAddress,
+                          const char* port,
+                          bool useIPv4Only )
 {
+// If you specify "localhost" then specify
+// that it's IPv4 because otherwise you
+// might get the localhost address ::1 for
+// IPv6.  Then if you try to connect a client
+// to 127.0.0.1 it won't find it.
+
+// Str addrS( ipAddress );
+// if( addrS.getSize() == 0 )
+  // If it's equal a string...
+
+
 GetAddress getAddress;
 
-if( !getAddress.getAddressInfo( domain,
+if( !getAddress.getAddressInfo( ipAddress,
                                 port,
-                                true ))
+                                true,
+                                useIPv4Only ))
   {
-  StIO::putS( 
+  StIO::putS(
        "openServer() could not get address." );
   return InvalSock;
   }
 
+CharBuf fromCBuf;
+Str showAddr = GetAddress::getAddressStr( 
+                       getAddress.getSockAddrPt() );
+if( showAddr.getSize() == 0 )
+  {
+  StIO::putS( "No IP address for the server." );
+  // if( !getAddress.moveToNextAddr())
 
-k the stats and hacking info for disallowed
+  return InvalSock;
+  // continue;
+  }
+
+StIO::putS( "Server IP address:" );
+fromCBuf.appendStr( showAddr );
+StIO::putCharBuf( fromCBuf );
+StIO::putS( " " );
+
+// The stats and hacking info for disallowed
 // IP addresses and things.
 
 // The domain can be "localhost".
@@ -665,7 +702,7 @@ if( 0 != bind( serverSocket, getAddress.
 
 // The backlog could be several hundred in Windows.
 // What is it in Linux?
-if( 0 != listen( serverSocket, 20 ))
+if( 0 != listen( serverSocket, 100 ))
   {
   closeSocket( serverSocket );
   StIO::putS( "Server listen error." );
@@ -677,6 +714,8 @@ if( !setNonBlocking( serverSocket ))
   StIO::putS( "setNonBlocking returned false." );
   return InvalSock;
   }
+
+StIO::putS( "Got a server socket." );
 
 return serverSocket;
 }
@@ -722,10 +761,6 @@ SocketCpp SocketsApi::acceptConnect(
                          CharBuf& fromCBuf )
 {
 fromCBuf.clear();
-// servSock = InvalSock;
-return servSock;
-/*
-//  Local loopback: 127.0.0.1
 
 // sockaddr_storage is big enough to hold IPv6
 // or IPv4.
@@ -734,11 +769,6 @@ Int32 addrSize = sizeof( remoteAddr );
 
 // if( !checkSelect( servSock ))
   // return InvalSock;
-
-// I hate to have to do stuff like this:
-// The new style static_cast won't work here
-// either.
-// static_cast<>()
 
 SocketCpp acceptSock = accept( servSock,
               (struct sockaddr *)&remoteAddr,
@@ -751,23 +781,13 @@ if( acceptSock == InvalSock )
 
   if( error == WSAEWOULDBLOCK )
     {
-    // I think the client has to send some data
-    // before it will accept it.
-
     // StIO::putS( "Socket would block." );
     return InvalSock;
     }
 
-
   StIO::putS( "socket accept error is: " );
   StIO::printFD( error );
   StIO::printF( "\n" );
-
-  // StIO::putS( "Socket would block." );
-
-  // Usually this means that it's a
-  // non-blocking socket and there is nothing
-  // there to accept.
   return InvalSock;
   }
 
@@ -777,12 +797,27 @@ StIO::putS( "Accepted a socket at top." );
 struct sockaddr* sa =
                 (struct sockaddr *)&remoteAddr;
 
-// getAddress.showAddress( sa, fromCBuf );
+// StIO::putS( "Accepted a socket from." );
+// GetAddress::showAddress( sa, fromCBuf );
 
-StIO::putS( "Accepted a socket." );
+Str showAddr = GetAddress::getAddressStr( 
+                       getAddress.getSockAddrPt() );
+if( showAddr.getSize() == 0 )
+  {
+  StIO::putS( "No IP address for the server." );
+  // if( !getAddress.moveToNextAddr())
+
+  return InvalSock;
+  // continue;
+  }
+
+=====
+StIO::putS( "Server IP address:" );
+fromCBuf.appendStr( showAddr );
+StIO::putCharBuf( fromCBuf );
+StIO::putS( " " );
 
 return acceptSock;
-*/
 }
 
 
