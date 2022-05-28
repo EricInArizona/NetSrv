@@ -1,2 +1,3 @@
-# Sockets
-Network sockets
+# A Server
+See the Network repository.
+
