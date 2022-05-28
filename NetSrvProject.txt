@@ -1,0 +1,33 @@
+buildfile	\Eric\Main\NetSrv\BuildProj.bat
+executablefile	\Eric\Main\NetSrv\NetSrv.exe
+projectdirectory	\Eric\Main\NetSrv
+recentfile1	\Eric\Main\NetSrv\MainApp.h
+recentfile2	\Eric\Main\NetSrv\MainApp.cpp
+recentfile3	\Eric\Main\Network\SocketsApiWin.h
+recentfile4	\Eric\Main\Network\SocketsApiWin.cpp
+recentfile5	\Eric\Main\Docs\Notes.txt
+recentfile6	\Eric\Main\Network\ServerPass.cpp
+recentfile7	\Eric\Main\CppBase\TimeApi.h
+recentfile8	
+recentfile9	
+recentfile10	
+recentfile11	
+recentfile12	
+recentfile13	
+recentfile14	
+recentfile15	
+recentfile16	
+recentfile17	
+recentfile18	
+recentfile19	
+recentfile20	
+recentfile21	
+recentfile22	
+recentfile23	
+recentfile24	
+recentfile25	
+recentfile26	
+recentfile27	
+recentfile28	
+recentfile29	
+recentfile30	
