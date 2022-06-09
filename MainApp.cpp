@@ -30,7 +30,10 @@ Int32 delay = 200; // milliseconds.
 // If it's out of RAM and can't allocate the
 // memory for a new object then it throws an
 // exception.
+
+// Check this out:
 // set_new_handler()
+
 
 try
 {
@@ -87,15 +90,6 @@ catch( ... )
 
 void MainApp::runServer( void )
 {
-/*
-Uint64 testSocket = SocketsApi::connectClient(
-                     "www.durangoherald.com",
-                     "443" );
-if( testSocket == 0 )
-
-*/
-
-
 if( !server.startServer( "443" ))
   return;
 
