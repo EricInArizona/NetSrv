@@ -2,22 +2,22 @@ buildfile	\Eric\Main\NetSrv\BuildProj.bat
 executablefile	\Eric\Main\NetSrv\NetSrv.exe
 projectdirectory	\Eric\Main\NetSrv
 recentfile1	\Eric\Main\NetSrv\MainApp.h
-recentfile2	\Eric\Main\NetSrv\MainApp.cpp
-recentfile3	\Eric\Main\Network\SocketsApiWin.h
-recentfile4	\Eric\Main\Network\SocketsApiWin.cpp
-recentfile5	\Eric\Main\Docs\Notes.txt
-recentfile6	\Eric\Main\Network\ServerPass.cpp
-recentfile7	\Eric\Main\CppBase\TimeApi.h
-recentfile8	
-recentfile9	
-recentfile10	
-recentfile11	
-recentfile12	
-recentfile13	
-recentfile14	
-recentfile15	
-recentfile16	
-recentfile17	
+recentfile2	\Eric\Main\Docs\Notes.txt
+recentfile3	\Eric\Main\NetSrv\MainApp.cpp
+recentfile4	\Eric\Main\Network\ServerPass.h
+recentfile5	\Eric\Main\Network\ServerPass.cpp
+recentfile6	\Eric\Main\Network\Server.h
+recentfile7	\Eric\Main\Network\Server.cpp
+recentfile8	\Eric\Main\Network\NetClient.h
+recentfile9	\Eric\Main\Network\NetClient.cpp
+recentfile10	\Eric\Main\Network\SrvClient.h
+recentfile11	\Eric\Main\Network\SrvClient.cpp
+recentfile12	\Eric\Main\WinApi\TimeApiWin.h
+recentfile13	\Eric\Main\Network\SrvClPass.h
+recentfile14	\Eric\Main\Network\SrvClPass.cpp
+recentfile15	\Eric\Main\Network\SClientArray.h
+recentfile16	\Eric\Main\Network\SClientArray.cpp
+recentfile17	\Eric\Main\Network\SrvClPoint.h
 recentfile18	
 recentfile19	
 recentfile20	
