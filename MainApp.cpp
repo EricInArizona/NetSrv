@@ -46,6 +46,11 @@ StIO::printF( "Version date: " );
 StIO::putS( getVersionStr() );
 StIO::printF( "\n" );
 
+// Markers.java  or .cs
+StIO::printF( "Wide char: " );
+StIO::putWChar( 0x2190 );
+StIO::printF( "\n" );
+
 // For Linux:
 // Int32 stackSize = SetStack::getSize();
 // Str showS( stackSize );
@@ -90,7 +95,7 @@ catch( ... )
 
 void MainApp::runServer( void )
 {
-if( !server.startServer( "443" ))
+if( !server.startServer( "127.0.0.1", "443" ))
   return;
 
 server.mainLoop();
